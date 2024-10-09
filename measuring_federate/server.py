@@ -14,6 +14,11 @@ from oedisi.componentframework.system_configuration import ComponentStruct
 from oedisi.types.common import ServerReply, HeathCheck, DefaultFileNames
 from oedisi.types.common import BrokerConfig
 
+sensor_logger = logging.getLogger("measuring_federate")
+logger = logging.getLogger('uvicorn.error')
+logger.addHandler(*sensor_logger.handlers)
+logger.setLevel(logging.DEBUG)
+
 app = FastAPI()
 
 is_kubernetes_env = os.environ['SERVICE_NAME'] if 'SERVICE_NAME' in os.environ else None
@@ -39,20 +44,23 @@ async def read_root():
     
 @app.post("/run")
 async def run_model(broker_config:BrokerConfig, background_tasks: BackgroundTasks):
-    logging.info(broker_config)
+    logger.info(f"{broker_config=}")
     feeder_host = broker_config.feeder_host
     feeder_port = broker_config.feeder_port
     url = build_url(feeder_host, feeder_port, ['sensor']) 
-    logging.info(url)
+    logger.info(url)
     try:   
+        logger.info("Requesting sensor information. This might take a while")
         reply = requests.get(url)
-        sensor_data = reply.json()
-        if not sensor_data:
+        sensor_dict = reply.json()
+        if not sensor_dict:
             msg = "empty sensor list"
             raise HTTPException(404, msg)
-        logging.info(sensor_data)
-        with open("sensors.json", "w") as outfile:
-            json.dump(sensor_data, outfile)
+        logger.info(f"Sensors types available {list(sensor_dict.keys())}", )
+        
+        for sensor_type, sensorlist in sensor_dict.items():    
+            with open(f"{sensor_type}.json", "w") as outfile:
+                json.dump(sensorlist, outfile)
 
         background_tasks.add_task(run_simulator, broker_config)
         response = ServerReply(
@@ -80,4 +88,3 @@ async def configure(component_struct:ComponentStruct):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ['PORT']))
-

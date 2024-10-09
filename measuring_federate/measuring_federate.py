@@ -8,7 +8,7 @@ from datetime import datetime
 from oedisi.types.data_types import MeasurementArray, EquipmentNodeArray
 from oedisi.types.common import BrokerConfig
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("measuring_federate")
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.INFO)
 

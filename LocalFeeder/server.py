@@ -17,12 +17,16 @@ from oedisi.componentframework.system_configuration import ComponentStruct
 from oedisi.types.common import ServerReply, HeathCheck, DefaultFileNames
 from oedisi.types.common import BrokerConfig
 
+
+logger = logging.getLogger('uvicorn.error')
+logger.setLevel(logging.DEBUG)
+
 REQUEST_TIMEOUT_SEC = 1200
 
 app = FastAPI()
 
 base_path = os.getcwd()
-
+params = None
 
 @app.middleware("http")
 async def timeout_middleware(request: Request, call_next):
@@ -53,22 +57,35 @@ def read_root():
 
 @app.get("/sensor")
 async def sensor():
-    logging.info(os.getcwd())
-    sensor_path = os.path.join(base_path, "sensors", "sensors.json")
-    while not os.path.exists(sensor_path):
-        time.sleep(1)
-        logging.info(f"waiting {sensor_path}")
-    logging.info("success")
-    data = json.load(open(sensor_path, "r"))
-    return data
-
+    logger.info(os.getcwd())
+    global params
+    if params:
+        sensor_path = os.path.join(base_path, "sensors")
+        
+        if "sensor_location" not in params:
+            required_files = ["voltage_ids", "real_ids", "reactive_ids"]
+        else:
+            required_files = ["sensors"]
+        
+        while sum([os.path.exists(os.path.join(sensor_path, f"{r}.json")) for r in required_files]) != len(required_files):
+            time.sleep(1)
+            logger.info(f"waiting for sensor file: {required_files}")
+        
+        logger.info("sensor file available")
+        sensor_data ={}
+        for r in required_files:
+            sensor_data[r] = json.load(open(os.path.join(sensor_path, f"{r}.json"), "r"))
+        return sensor_data
+    else:
+        err = "'params' not defined. This endpoint can only be used after the federate has been  configured and is in run mode"
+        raise HTTPException(500, err)
 
 @app.post("/profiles")
 async def upload_profiles(file: UploadFile):
     try:
         data = file.file.read()
         if not file.filename.endswith(".zip"):
-            HTTPException(400, "Invalid file type. Only zipped profiles are accepted.")
+            raise HTTPException(400, "Invalid file type. Only zipped profiles are accepted.")
 
         profile_path = "./profiles"
 
@@ -86,12 +103,12 @@ async def upload_profiles(file: UploadFile):
             ).dict()
             return JSONResponse(response, 200)
         else:
-            HTTPException(
+            raise HTTPException(
                 400, "Invalid user defined profile structure. See OEDISI documentation."
             )
 
     except Exception as e:
-        HTTPException(
+        raise HTTPException(
             500, "Unknown error while uploading userdefined opendss profiles."
         )
 
@@ -120,16 +137,16 @@ async def upload_model(file: UploadFile):
             return JSONResponse(response, 200)
 
         else:
-            HTTPException(400, "A valid opendss model should have a master.dss file.")
+            raise HTTPException(400, "A valid opendss model should have a master.dss file.")
     except Exception as e:
-        HTTPException(500, "Unknown error while uploading userdefined opendss model.")
+        raise HTTPException(500, "Unknown error while uploading userdefined opendss model.")
 
 
 @app.post("/run")
 async def run_feeder(
     broker_config: BrokerConfig, background_tasks: BackgroundTasks
 ):  # :BrokerConfig
-    logging.info(broker_config)
+    logger.info(broker_config)
     try:
         background_tasks.add_task(run_simulator, broker_config)
         response = ServerReply(detail="Task sucessfully added.").dict()
@@ -137,11 +154,12 @@ async def run_feeder(
         return JSONResponse(response, 200)
     except Exception as e:
         err = traceback.format_exc()
-        HTTPException(500, str(err))
+        raise HTTPException(500, str(err))
 
 
 @app.post("/configure")
 async def configure(component_struct:ComponentStruct): 
+    global params
     component = component_struct.component
     params = component.parameters
     params["name"] = component.name

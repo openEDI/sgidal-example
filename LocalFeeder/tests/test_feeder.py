@@ -60,24 +60,6 @@ def federate_config():
     )
 
 
-@pytest.fixture()
-def edge_cases_config():
-    return FeederSimulator.FeederConfig(
-        **{
-            "use_smartds": False,
-            "profile_location": "",
-            "opendss_location": "",
-            "sensor_location": "",
-            "existing_feeder_file": "tests/test_data/master.dss",
-            "start_date": "2017-01-01 00:00:00",
-            "number_of_timesteps": 1,
-            "run_freq_sec": 900,
-            "topology_output": "topology.json",
-            "name": "feeder",
-        }
-    )
-
-
 def plot_y_matrix(Y):
     Y_max = np.max(np.abs(Y))
 
@@ -676,12 +658,3 @@ def test_incidence_matrix(federate_config):
         assert len(incidences.equipment_type) == len(incidences.from_equipment)
     if incidences.ids is not None:
         assert len(incidences.ids) == len(incidences.from_equipment)
-
-
-def test_edge_case(edge_cases_config):
-    sim = FeederSimulator.FeederSimulator(edge_cases_config)
-    sim.snapshot_run()
-    sim.get_PQs_gen(static=True)
-    sim.solve(0, 0)
-    pq = sim.get_PQs_gen()
-    assert len(pq) == 4

@@ -30,10 +30,7 @@ from oedisi.types.data_types import (
 )
 from scipy.sparse import coo_matrix
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.DEBUG)
-
+logger = logging.getLogger("uvicorn.error")
 
 def numpy_to_y_matrix(array: npt.NDArray[np.complex64]):
     """Convert 2d numpy array to list of lists."""

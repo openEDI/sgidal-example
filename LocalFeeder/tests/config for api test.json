@@ -1,0 +1,29 @@
+{
+    "component": {
+        "name": "feeder",
+        "type": "LocalFeeder",
+        "host": "feeder",
+        "container_port": 5678,
+        "parameters": {
+            "use_smartds": true,
+            "user_uploads_model": false,
+            "profile_location": "SMART-DS/v1.0/2017/SFO/P9U/profiles",
+            "opendss_location": "SMART-DS/v1.0/2017/SFO/P9U/scenarios/solar_medium_batteries_none_timeseries/opendss/p9uhs16_1247/p9uhs16_1247--p9udt12866",
+            "start_date": "2017-05-01 00:00:00",
+            "number_of_timesteps": 3,
+            "run_freq_sec": 900,
+            "topology_output": "topology.json",
+            "use_sparse_admittance": true
+        }
+    },
+    "links": []
+}
+
+
+{
+    "broker_port": 23404,
+    "broker_ip": "127.0.0.1",
+    "api_port": 8766,
+    "feeder_host": "string",
+    "feeder_port": 0
+}

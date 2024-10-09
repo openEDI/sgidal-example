@@ -34,9 +34,7 @@ from oedisi.types.data_types import (
 from pydantic import BaseModel
 from scipy.sparse import coo_matrix, csc_matrix
 
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler())
-logger.setLevel(logging.INFO)
+logger = logging.getLogger("uvicorn.error")
 
 
 def permutation(from_list, to_list):
@@ -117,6 +115,7 @@ class FeederSimulator(object):
 
     def __init__(self, config: FeederConfig):
         """Create a ``FeederSimulator`` object."""
+        logger.info("Creating an instance of feeder simulator")
         self._state = OpenDSSState.UNLOADED
         self._opendss_location = config.opendss_location
         self._profile_location = config.profile_location
@@ -139,29 +138,39 @@ class FeederSimulator(object):
 
         self.tap_setting = config.tap_setting
 
-        if config.existing_feeder_file is None or not os.path.exists(
-            config.existing_feeder_file
-        ):
+        self._simulation_time_step = "15m"
+        if config.existing_feeder_file is None:
             if self._use_smartds:
+                logger.info("Downloading Opendss model from OEDI data lake")
                 self._feeder_file = os.path.join("opendss", "Master.dss")
                 self.download_data("oedi-data-lake", update_loadshape_location=True)
             elif not self._use_smartds and not self._user_uploads_model:
+                logger.info("Defaulting to OpenDSS master file 'Master.dss'")
                 self._feeder_file = os.path.join("opendss", "master.dss")
                 self.download_data("gadal")
             else:
+                logger.Error("Usere should have uploaded model using endpoint before running the simulation")
                 # User should have uploaded model using endpoint
                 raise Exception("Set existing_feeder_file when uploading data")
         else:
+            logger.info(f"Using user defined OpenDSS master file: '{config.existing_feeder_file}'")
             self._feeder_file = config.existing_feeder_file
 
         self.open_lines = config.open_lines
+        logger.info(f"Loading OpenDSS model...")
         self.load_feeder()
-
+        logger.info(f"complete")
+        logger.info(f"Locating sensor information")
         if self._sensor_location is None:
+            logger.info(f"No sensor info provided. Creating sensors...")
             self.create_measurement_lists()
+            logger.info(f"complete")
 
+        logger.info(f"Running snapshop simulation...")
         self.snapshot_run()
+        logger.info(f"Running snapshop simulation")
         assert self._state == OpenDSSState.SNAPSHOT_RUN, f"{self._state}"
+        logger.info(f"complete")
 
     def forcast_pv(self, steps: int) -> list:
         """
@@ -169,7 +178,7 @@ class FeederSimulator(object):
         average irradiance is computed over all PV systems for each time step. This average irradiance
         is used to compute the individual PV system power output
         """
-        cmd = f'Set stepsize={self._run_freq_sec} Number=1'
+        cmd = f"Set stepsize={self._simulation_time_step} Number=1"
         dss.Text.Command(cmd)
         forecast = []
         for k in range(steps):
@@ -218,7 +227,7 @@ class FeederSimulator(object):
 
     def download_data(self, bucket_name, update_loadshape_location=False):
         """Download data from bucket path."""
-        logging.info(f"Downloading from bucket {bucket_name}")
+        logger.info(f"Downloading from bucket {bucket_name}")
         # Equivalent to --no-sign-request
         s3_resource = boto3.resource("s3", config=Config(signature_version=UNSIGNED))
         bucket = s3_resource.Bucket(bucket_name)
@@ -226,6 +235,8 @@ class FeederSimulator(object):
         profile_location = self._profile_location
         sensor_location = self._sensor_location
 
+        logger.info(f"Downloading the OpenDSS model")
+        
         for obj in bucket.objects.filter(Prefix=opendss_location):
             output_location = os.path.join(
                 "opendss", obj.key.replace(opendss_location, "").strip("/")
@@ -233,9 +244,13 @@ class FeederSimulator(object):
             os.makedirs(os.path.dirname(output_location), exist_ok=True)
             bucket.download_file(obj.key, output_location)
 
+        logger.info(f"Downloading the OpenDSS profiles")
+
         modified_loadshapes = ""
         os.makedirs(os.path.join("profiles"), exist_ok=True)
         if update_loadshape_location:
+            logger.info(f"Downloading the OpenDSS loapshape files")
+            
             all_profiles = set()
             with open(os.path.join("opendss", "LoadShapes.dss"), "r") as fp_loadshapes:
                 for row in fp_loadshapes.readlines():
@@ -253,8 +268,9 @@ class FeederSimulator(object):
             for profile in all_profiles:
                 s3_location = f"{profile_location}/{profile}"
                 bucket.download_file(s3_location, os.path.join("profiles", profile))
-
+            
         else:
+            logger.info(f"Downloading load and generation profiles (csv files)")
             for obj in bucket.objects.filter(Prefix=profile_location):
                 output_location = os.path.join(
                     "profiles", obj.key.replace(profile_location, "").strip("/")
@@ -263,11 +279,13 @@ class FeederSimulator(object):
                 bucket.download_file(obj.key, output_location)
 
         if sensor_location is not None:
+            logger.info(f"Downloading sensor files")
             output_location = os.path.join("sensors", os.path.basename(sensor_location))
             if not os.path.exists(os.path.dirname(output_location)):
                 os.makedirs(os.path.dirname(output_location))
             bucket.download_file(sensor_location, output_location)
-
+        logger.info(f"Downloading complete")
+        
     def create_measurement_lists(
         self,
         percent_voltage=75,
@@ -328,7 +346,7 @@ class FeederSimulator(object):
                     identifier, x, y = row
                     bus_coords[identifier] = (float(x), float(y))
                 except ValueError as e:
-                    logging.warning(f"Unable to parse row in bus coords: {row}, {e}")
+                    logger.warning(f"Unable to parse row in bus coords: {row}, {e}")
                     return None
             return bus_coords
 
@@ -461,7 +479,7 @@ class FeederSimulator(object):
         self._state = OpenDSSState.DISABLED_SOLVE
 
     def just_solve(self):
-        """Solvesolve without setting time or anything. Useful for commands."""
+        """Solve without setting time or anything. Useful for commands."""
         assert (
             self._state != OpenDSSState.UNLOADED
             and self._state != OpenDSSState.DISABLED_RUN
@@ -501,16 +519,17 @@ class FeederSimulator(object):
         for ld in get_loads(dss, self._circuit):
             self._circuit.SetActiveElement("Load." + ld["name"])
             current_pq_name = dss.CktElement.Name()
-            for i, node_name in enumerate(ld["node_names"]):
+            for ii in range(len(ld["phases"])):
+                node_name = ld["bus1"].upper() + "." + ld["phases"][ii]
                 assert (
                     node_name in all_node_names
                 ), f"{node_name} for {current_pq_name} not found"
                 if static:
                     power = complex(ld["kW"], ld["kVar"])
-                    PQs.append(power / ld["numPhases"])
+                    PQs.append(power / len(ld["phases"]))
                 else:
                     power = dss.CktElement.Powers()
-                    PQs.append(complex(power[2 * i], power[2 * i + 1]))
+                    PQs.append(complex(power[2 * ii], power[2 * ii + 1]))
                 pq_names.append(current_pq_name)
                 node_names.append(node_name)
         pq_xr = xr.DataArray(
@@ -532,9 +551,13 @@ class FeederSimulator(object):
         node_names: List[str] = []
         pq_names: List[str] = []
         for PV in get_pvsystems(dss):
+            bus = PV["bus"].split(".")
+            if len(bus) == 1:
+                bus = bus + ["1", "2", "3"]
             self._circuit.SetActiveElement("PVSystem." + PV["name"])
             current_pq_name = dss.CktElement.Name()
-            for i, node_name in enumerate(PV["node_names"]):
+            for ii in range(len(bus) - 1):
+                node_name = bus[0].upper() + "." + bus[ii + 1]
                 assert (
                     node_name in all_node_names
                 ), f"{node_name} for {current_pq_name} not found"
@@ -542,10 +565,10 @@ class FeederSimulator(object):
                     power = complex(
                         -1 * PV["kW"], -1 * PV["kVar"]
                     )  # -1 because injecting
-                    PQs.append(power / PV["numPhases"])
+                    PQs.append(power / (len(bus) - 1))
                 else:
                     power = dss.CktElement.Powers()
-                    PQs.append(complex(power[2 * i], power[2 * i + 1]))
+                    PQs.append(complex(power[2 * ii], power[2 * ii + 1]))
                 pq_names.append(current_pq_name)
                 node_names.append(node_name)
         pq_xr = xr.DataArray(
@@ -567,10 +590,13 @@ class FeederSimulator(object):
         node_names: List[str] = []
         pq_names: List[str] = []
         for gen in get_generators(dss):
+            bus = gen["bus"].split(".")
+            if len(bus) == 1:
+                bus = bus + ["1", "2", "3"]
             self._circuit.SetActiveElement("Generator." + gen["name"])
             current_pq_name = dss.CktElement.Name()
-
-            for i, node_name in enumerate(gen["node_names"]):
+            for ii in range(len(bus) - 1):
+                node_name = bus[0].upper() + "." + bus[ii + 1]
                 assert (
                     node_name in all_node_names
                 ), f"{node_name} for {current_pq_name} not found"
@@ -578,10 +604,10 @@ class FeederSimulator(object):
                     power = complex(
                         -1 * gen["kW"], -1 * gen["kVar"]
                     )  # -1 because injecting
-                    PQs.append(power / gen["numPhases"])
+                    PQs.append(power / (len(bus) - 1))
                 else:
                     power = dss.CktElement.Powers()
-                    PQs.append(complex(power[2 * i], power[2 * i + 1]))
+                    PQs.append(complex(power[2 * ii], power[2 * ii + 1]))
                 pq_names.append(current_pq_name)
                 node_names.append(node_name)
         pq_xr = xr.DataArray(
@@ -609,7 +635,8 @@ class FeederSimulator(object):
         pq_names: List[str] = []
         for cap in get_capacitors(dss):
             current_pq_name = cap["name"]
-            for i, node_name in enumerate(cap["node_names"]):
+            for ii in range(cap["numPhases"]):
+                node_name = cap["busname"].upper() + "." + cap["busphase"][ii]
                 assert (
                     node_name in all_node_names
                 ), f"{node_name} for {current_pq_name} not found"
@@ -619,7 +646,7 @@ class FeederSimulator(object):
                     )  # -1 because it's injected into the grid
                     PQs.append(power / cap["numPhases"])
                 else:
-                    PQs.append(complex(0, cap["power"][2 * i + 1]))
+                    PQs.append(complex(0, cap["power"][2 * ii + 1]))
                 pq_names.append(current_pq_name)
                 node_names.append(node_name)
         pq_xr = xr.DataArray(
@@ -731,7 +758,7 @@ class FeederSimulator(object):
             pvlist = ""
         else:
             if len(pvsystem_set) != 1:
-                logging.error(
+                logger.error(
                     """Controlling mulitple pvsystems manually results in unstable
                     behavior when the number of phases differ"""
                 )
@@ -900,7 +927,7 @@ class FeederSimulator(object):
                 # dicts are insert-ordered in >=3.7
                 names = list(dict.fromkeys(bus_names))
                 if len(names) != 2:
-                    logging.info(
+                    logger.info(
                         f"Line {line} has {len(names)} terminals, skipping in incidence matrix"
                     )
                     continue
@@ -916,7 +943,7 @@ class FeederSimulator(object):
                 bus_names = map(lambda x: x.split(".")[0], names)
                 names = list(dict.fromkeys(bus_names))
                 if len(names) != 2:
-                    logging.info(
+                    logger.info(
                         f"Transformer {transformer} has {len(names)} terminals, skipping in incidence matrix"
                     )
                     continue
