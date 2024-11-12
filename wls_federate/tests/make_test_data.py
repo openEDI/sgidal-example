@@ -40,12 +40,22 @@ def write_test_data(outputsdir, targetdir, timestep):
         f.write(VoltagesImaginary(**voltage_imag).json())
 
 
-test_data_dir = "wls_federate/tests/small_smartds_tap_time_3"
+test_data_dir = "wls_federate/tests/large_smartds_no_noise_3"
 if not os.path.exists(test_data_dir):
     os.makedirs(test_data_dir)
-write_test_data(Path("outputs"), Path(test_data_dir), 3)
+write_test_data(Path("outputs_large_no_noise"), Path(test_data_dir), 3)
 
-test_data_dir = "wls_federate/tests/small_smartds_tap_time_40"
+test_data_dir = "wls_federate/tests/large_smartds_noise_3"
 if not os.path.exists(test_data_dir):
     os.makedirs(test_data_dir)
-write_test_data(Path("outputs"), Path(test_data_dir), 40)
+write_test_data(Path("outputs_large_noise"), Path(test_data_dir), 3)
+
+test_data_dir = "wls_federate/tests/large_smartds_no_noise_40"
+if not os.path.exists(test_data_dir):
+    os.makedirs(test_data_dir)
+write_test_data(Path("outputs_large_no_noise"), Path(test_data_dir), 40)
+
+test_data_dir = "wls_federate/tests/large_smartds_noise_40"
+if not os.path.exists(test_data_dir):
+    os.makedirs(test_data_dir)
+write_test_data(Path("outputs_large_noise"), Path(test_data_dir), 40)

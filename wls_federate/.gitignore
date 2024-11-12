@@ -1,5 +1,6 @@
 base_*.csv
 base_*.npz
+*.png
 opendss
 profiles
 

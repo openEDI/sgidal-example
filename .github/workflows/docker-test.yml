@@ -33,7 +33,10 @@ jobs:
       shell: bash -l {0}
       run: |
         pip install matplotlib pyarrow numpy matplotlib pandas
-        pip install oedisi==1.2.1
+        pip install 'oedisi>=2,<3'
+
+        oedisi evaluate-estimate --metric MAAE --path outputs
+        oedisi evaluate-estimate --metric MARE --path outputs
 
         python post_analysis.py outputs_build
     - name: Archive logs

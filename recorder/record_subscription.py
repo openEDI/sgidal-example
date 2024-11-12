@@ -70,8 +70,6 @@ class Recorder:
                 logger.info("start time: " + str(datetime.now()))
                 logger.debug(granted_time)
                 # Check that the data is a MeasurementArray type
-                json_data = self.sub.json
-                json_data["time"] = granted_time
                 measurement = MeasurementArray(**self.sub.json)
                 measurement_dict = {
                     key: value

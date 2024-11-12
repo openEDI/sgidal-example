@@ -84,7 +84,10 @@ class MeasurementRelay:
         logger.debug(config.name)
 
         h.helicsFederateInfoSetTimeProperty(
-            fedinfo, h.helics_property_time_delta, config.run_freq_time_step
+            fedinfo, h.helics_property_time_period, config.run_freq_time_step
+        )
+        h.helicsFederateInfoSetTimeProperty(
+            fedinfo, h.helics_property_time_offset, 0.03
         )
 
         self.vfed = h.helicsCreateValueFederate(config.name, fedinfo)

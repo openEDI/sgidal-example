@@ -119,10 +119,24 @@ def matrix_to_numpy(admittance: List[List[Complex]]):
     return np.array([[x[0] + 1j * x[1] for x in row] for row in admittance])
 
 
-def get_indices(topology, measurement):
+def get_indices(topology: Topology, measurement, extra_nodes=set()):
     "Get list of indices in the topology for each index of the input measurement"
     inv_map = {v: i for i, v in enumerate(topology.base_voltage_magnitudes.ids)}
-    return [inv_map[v] for v in measurement.ids]
+    ordinary_indices = [inv_map[v] for v in measurement.ids]
+    extra_indices = [inv_map[v] for v in extra_nodes.difference(measurement.ids)]
+    return ordinary_indices + extra_indices
+
+
+def get_zero_injection_indices(topology: Topology):
+    zero_nodes = set(topology.base_voltage_magnitudes.ids)
+    zero_nodes = zero_nodes.difference(topology.injections.power_real.ids)
+    zero_nodes = zero_nodes.difference(topology.injections.power_imaginary.ids)
+    zero_nodes = zero_nodes.difference(topology.injections.current_real.ids)
+    zero_nodes = zero_nodes.difference(topology.injections.current_imaginary.ids)
+    zero_nodes = zero_nodes.difference(topology.injections.impedance_real.ids)
+    zero_nodes = zero_nodes.difference(topology.injections.impedance_imaginary.ids)
+    zero_nodes = zero_nodes.difference(topology.slack_bus)
+    return zero_nodes
 
 
 class AlgorithmParameters(BaseModel):
@@ -164,19 +178,23 @@ def state_estimator(
     logging.debug("Number of Nodes")
     logging.debug(num_node)
 
-    knownP = get_indices(topology, P)
-    knownQ = get_indices(topology, Q)
+    zero_power_nodes = get_zero_injection_indices(topology)
+    knownP = get_indices(topology, P, extra_nodes=zero_power_nodes)
+    knownQ = get_indices(topology, Q, extra_nodes=zero_power_nodes)
     knownV = get_indices(topology, V)
 
+    P_array = np.zeros(len(knownP))
+    P_array[: len(P.values)] = P.values
+    Q_array = np.zeros(len(knownQ))
+    Q_array[: len(Q.values)] = Q.values
     z = np.concatenate(
         (
             V.values / base_voltages[knownV],
-            -np.array(P.values) / parameters.base_power,
-            -np.array(Q.values) / parameters.base_power,
+            -P_array / parameters.base_power,
+            -Q_array / parameters.base_power,
         ),
         axis=0,
     )
-
     Y = get_y(topology.admittance, topology.base_voltage_magnitudes.ids)
     # Hand-crafted unit conversion (check it, it works)
     Y = (
@@ -318,12 +336,20 @@ class StateEstimatorFederate:
             knownV = get_indices(topology, voltages)
 
             if self.initial_V is None:
-                # Flat start or using average measurements
-                if (
-                    len(power_P.ids) + len(voltages.ids) + len(power_Q.ids)
-                    > len(ids) * 2
-                ):
-                    self.initial_V = 1.0
+                voltage_inv_map = {v: i for i, v in enumerate(voltages.ids)}
+                topology_inv_map = {
+                    v: i for i, v in enumerate(topology.base_voltage_magnitudes.ids)
+                }
+                if all(map(lambda x: x in voltage_inv_map, topology.slack_bus)):
+                    self.initial_V = np.mean(
+                        [
+                            voltages.values[voltage_inv_map[slack_bus]]
+                            / topology.base_voltage_magnitudes.values[
+                                topology_inv_map[slack_bus]
+                            ]
+                            for slack_bus in topology.slack_bus
+                        ]
+                    )
                 else:
                     self.initial_V = np.mean(
                         np.array(voltages.values)
